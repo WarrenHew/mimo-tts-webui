@@ -90,7 +90,9 @@ export default function Home() {
     setSelectedVoice(c.voice);
     handleModelChange(c.model);
     setStylePrompt(c.stylePrompt);
-    if (c.voiceDescription) setVoiceDescription(c.voiceDescription);
+    setVoiceDescription(c.voiceDescription || '');
+    setReferenceAudio(c.referenceAudioData || null);
+    setReferenceAudioName(c.referenceAudioName || '');
   }, []);
 
   const handleGenerate = async () => {
@@ -100,7 +102,7 @@ export default function Home() {
     try {
       const url = await generateAudio({
         text, model: selectedModel,
-        voice: selectedModel === 'mimo-v2.5-tts' ? selectedVoice : undefined,
+        voice: selectedVoice,
         style_prompt: stylePrompt || undefined,
         voice_description: selectedModel === 'mimo-v2.5-tts-voicedesign' ? voiceDescription || undefined : undefined,
         reference_audio_data: selectedModel === 'mimo-v2.5-tts-voiceclone' ? referenceAudio || undefined : undefined,
@@ -131,10 +133,12 @@ export default function Home() {
         model: selectedModel,
         stylePrompt,
         voiceDescription: voiceDescription || undefined,
+        referenceAudioData: referenceAudio || undefined,
+        referenceAudioName: referenceAudioName || undefined,
       });
     }, 800);
     return () => clearTimeout(timer);
-  }, [selectedVoice, selectedModel, stylePrompt, voiceDescription]);
+  }, [selectedVoice, selectedModel, stylePrompt, voiceDescription, referenceAudio, referenceAudioName]);
 
   useEffect(() => {
     setScriptLines(scriptText.split('\n').filter(Boolean).map((t, i) => ({ id: `l${i}`, text: t })));
@@ -240,7 +244,7 @@ export default function Home() {
                       }`}>
                       <div className="text-sm font-medium text-studio-text pr-6">{char.name}</div>
                       <div className="text-[10px] font-mono text-studio-muted mt-0.5">
-                        {char.voice} · {char.model.includes('voicedesign') ? 'Voice Design' : 'Preset'}
+                        {char.model.includes('voiceclone') ? 'Voice Clone' : char.model.includes('voicedesign') ? 'Voice Design' : `${char.voice} · Preset`}
                       </div>
                     </button>
                     <button
@@ -336,10 +340,10 @@ export default function Home() {
             {selectedModel === 'mimo-v2.5-tts-voiceclone' && (
               <div>
                 <label className="block text-xs font-mono text-studio-muted uppercase tracking-wider mb-1.5">
-                  Reference Audio
+                  {t('voice.referenceAudio')}
                 </label>
 
-                {/* Record or Upload tabs */}
+                {/* Record or Upload */}
                 {!referenceAudio && (
                   <div className="flex items-center gap-3 mb-3">
                     <AudioRecorder
@@ -353,13 +357,13 @@ export default function Home() {
                       }}
                       hasAudio={!!referenceAudio}
                     />
-                    <span className="text-[10px] text-studio-muted">or</span>
+                    <span className="text-[10px] text-studio-muted">·</span>
                     <label className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-studio-border text-studio-muted hover:text-studio-amber hover:border-studio-amber/40 transition-all text-xs cursor-pointer">
                       <Music className="w-3.5 h-3.5" />
-                      Upload
+                      {t('voice.upload')}
                       <input
                         type="file"
-                        accept="audio/*"
+                        accept="audio/wav,audio/mpeg,audio/mp3,.wav,.mp3"
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
@@ -371,8 +375,7 @@ export default function Home() {
                           setReferenceAudioName(file.name);
                           const reader = new FileReader();
                           reader.onload = () => {
-                            const base64 = (reader.result as string).split(',')[1];
-                            setReferenceAudio(base64);
+                            setReferenceAudio(reader.result as string);
                           };
                           reader.readAsDataURL(file);
                         }}
@@ -390,7 +393,7 @@ export default function Home() {
                       onClick={() => { setReferenceAudio(null); setReferenceAudioName(''); }}
                       className="text-[10px] text-studio-rose hover:underline"
                     >
-                      Remove
+                      {t('voice.removeRef')}
                     </button>
                   </div>
                 )}
@@ -414,7 +417,13 @@ export default function Home() {
               <div className="p-3 rounded-xl bg-studio-amber/5 border border-studio-amber/20">
                 <div className="text-[10px] font-mono text-studio-amber uppercase tracking-wider mb-1">{t('character.active')}</div>
                 <div className="text-sm font-medium text-studio-text">{selectedCharacter.name}</div>
-                <div className="text-[10px] font-mono text-studio-muted mt-0.5">{selectedCharacter.voice}</div>
+                <div className="text-[10px] font-mono text-studio-muted mt-0.5">
+                  {selectedCharacter.model.includes('voiceclone')
+                    ? 'Voice Clone'
+                    : selectedCharacter.model.includes('voicedesign')
+                      ? 'Voice Design'
+                      : selectedCharacter.voice}
+                </div>
               </div>
             )}
 
@@ -447,7 +456,7 @@ export default function Home() {
       {showCharacterForm && (
         <CharacterForm
           voices={voices}
-          onSave={(c) => { const created = addCharacter(c); setSelectedCharacter(created); }}
+          onSave={(c) => { const created = addCharacter(c); applyCharacter(created); }}
           onClose={() => setShowCharacterForm(false)}
         />
       )}

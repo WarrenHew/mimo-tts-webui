@@ -71,20 +71,27 @@ function buildRequestBody(req: TTSRequest): Record<string, unknown> {
   model = model.replace(/MiMo-V2\.5-TTS-VoiceClone/i, 'mimo-v2.5-tts-voiceclone');
   model = model.replace(/MiMo-V2\.5-TTS/i, 'mimo-v2.5-tts');
 
-  // Build message content with optional style prompt
-  let content = req.text;
-  if (req.style_prompt) {
-    content = `[风格: ${req.style_prompt}]\n${content}`;
-  }
-
-  // Build messages array — Voice Design requires a user message with the voice description
+  // Build messages per API spec:
+  // - user: natural language style control (director instructions, NOT spoken)
+  // - assistant: text to speak + optional inline audio tags
   const messages: Array<{ role: string; content: string }> = [];
 
-  if (model === 'mimo-v2.5-tts-voicedesign' && req.voice_description) {
-    messages.push({ role: 'user', content: req.voice_description });
+  if (model === 'mimo-v2.5-tts-voicedesign') {
+    // Voice Design: user = voice description, assistant = text
+    const voiceDesc = req.voice_description || req.style_prompt || 'A natural, clear voice.';
+    messages.push({ role: 'user', content: voiceDesc });
+  } else if (model === 'mimo-v2.5-tts-voiceclone') {
+    // Voice Clone: API requires a user message (can be empty or style prompt)
+    messages.push({ role: 'user', content: req.style_prompt || '' });
+  } else {
+    // Preset Voice: user = optional style prompt
+    if (req.style_prompt) {
+      messages.push({ role: 'user', content: req.style_prompt });
+    }
   }
 
-  messages.push({ role: 'assistant', content });
+  // Assistant message = the text to speak (with inline tags from frontend)
+  messages.push({ role: 'assistant', content: req.text });
 
   const body: Record<string, unknown> = {
     model,
@@ -95,23 +102,15 @@ function buildRequestBody(req: TTSRequest): Record<string, unknown> {
     stream: false,
   };
 
-  // Add voice for preset model
-  if (model === 'mimo-v2.5-tts' && req.voice) {
+  // Voice field per model
+  if (model === 'mimo-v2.5-tts-voiceclone' && req.reference_audio_data) {
+    // Voice Clone: audio.voice = DataURL of reference audio
+    (body.audio as Record<string, unknown>).voice = req.reference_audio_data;
+  } else if (model === 'mimo-v2.5-tts-voicedesign') {
+    // Voice Design: no voice field needed (voice is created from description)
+  } else if (req.voice) {
+    // Preset Voice: audio.voice = preset voice name (e.g. "冰糖")
     (body.audio as Record<string, unknown>).voice = req.voice;
-  }
-
-  // Add voice description for voice design model
-  if (model === 'mimo-v2.5-tts-voicedesign' && req.voice_description) {
-    (body.audio as Record<string, unknown>).voice_description = req.voice_description;
-  }
-
-  // Add reference audio for voice clone model
-  if (model === 'mimo-v2.5-tts-voiceclone') {
-    if (req.reference_audio_data) {
-      (body.audio as Record<string, unknown>).reference_audio = req.reference_audio_data;
-    } else if (req.reference_audio_url) {
-      (body.audio as Record<string, unknown>).reference_audio_url = req.reference_audio_url;
-    }
   }
 
   return body;
@@ -135,7 +134,7 @@ export async function generateSpeech(request: TTSRequest): Promise<TTSResponse> 
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      'api-key': apiKey,
     },
     body: JSON.stringify(body),
   });

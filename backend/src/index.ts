@@ -11,6 +11,7 @@ async function main() {
     logger: {
       level: process.env.LOG_LEVEL || 'info',
     },
+    bodyLimit: 20 * 1024 * 1024, // 20MB for voice clone audio uploads
   });
 
   // CORS: allow frontend dev server

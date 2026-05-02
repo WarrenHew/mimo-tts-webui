@@ -4,7 +4,7 @@ import { useState, useRef, useCallback } from 'react';
 import { Mic, Square, Play, Pause, Trash2 } from 'lucide-react';
 
 interface AudioRecorderProps {
-  onAudioReady: (base64: string, name: string) => void;
+  onAudioReady: (dataUrl: string, name: string) => void;
   onClear: () => void;
   hasAudio: boolean;
 }
@@ -90,14 +90,32 @@ export function AudioRecorder({ onAudioReady, onClear, hasAudio }: AudioRecorder
     }
   };
 
-  const confirmRecording = () => {
+  const confirmRecording = async () => {
     if (!recordedBlob) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(',')[1];
-      onAudioReady(base64, `recording-${Date.now()}.webm`);
-    };
-    reader.readAsDataURL(recordedBlob);
+    try {
+      // Decode WebM to PCM, then encode as WAV
+      const arrayBuffer = await recordedBlob.arrayBuffer();
+      const audioCtx = new AudioContext();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      audioCtx.close();
+
+      // Encode as WAV (16-bit PCM)
+      const wavBuffer = encodeWav(audioBuffer);
+      const wavBlob = new Blob([wavBuffer], { type: 'audio/wav' });
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        onAudioReady(reader.result as string, `recording-${Date.now()}.wav`);
+      };
+      reader.readAsDataURL(wavBlob);
+    } catch {
+      // Fallback: send WebM as-is
+      const reader = new FileReader();
+      reader.onload = () => {
+        onAudioReady(reader.result as string, `recording-${Date.now()}.webm`);
+      };
+      reader.readAsDataURL(recordedBlob);
+    }
   };
 
   const discardRecording = () => {
@@ -199,4 +217,56 @@ export function AudioRecorder({ onAudioReady, onClear, hasAudio }: AudioRecorder
       )}
     </div>
   );
+}
+
+/**
+ * Encode an AudioBuffer as a WAV file (16-bit PCM, mono or stereo).
+ */
+function encodeWav(audioBuffer: AudioBuffer): ArrayBuffer {
+  const numChannels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const length = audioBuffer.length;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const dataSize = length * blockAlign;
+  const headerSize = 44;
+  const buffer = new ArrayBuffer(headerSize + dataSize);
+  const view = new DataView(buffer);
+
+  // RIFF header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(view, 8, 'WAVE');
+  // fmt chunk
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // chunk size
+  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  // data chunk
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  // Write interleaved PCM samples
+  let offset = 44;
+  for (let i = 0; i < length; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const sample = Math.max(-1, Math.min(1, audioBuffer.getChannelData(ch)[i]));
+      const int16 = sample < 0 ? sample * 32768 : sample * 32767;
+      view.setInt16(offset, int16, true);
+      offset += 2;
+    }
+  }
+
+  return buffer;
+}
+
+function writeString(view: DataView, offset: number, str: string) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
 }

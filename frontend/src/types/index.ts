@@ -46,6 +46,8 @@ export interface CharacterProfile {
   stylePrompt: string;
   model: string;
   voiceDescription?: string;
+  referenceAudioData?: string; // DataURL for voice clone
+  referenceAudioName?: string;
   createdAt: string;
 }
 
