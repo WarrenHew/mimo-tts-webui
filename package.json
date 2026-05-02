@@ -1,0 +1,11 @@
+{
+  "name": "mimo-tts-webui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web UI for MiMo TTS v2.5 - Character Voice Dubbing Studio",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r --parallel build",
+    "start": "pnpm -r --parallel start"
+  }
+}
